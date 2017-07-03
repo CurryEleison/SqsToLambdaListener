@@ -28,24 +28,28 @@ sqs_logger = logging.getLogger('sqs_listener')
 
 class SqsToLambdaListener(object):
 
-    def __init__(self, queueurl, lambdaarn, **kwargs):
+    def __init__(self, queueurl, function_name, **kwargs):
         """
         :param queue: (str) name of queue to listen to
         :param kwargs: error_queue=None, interval=60, visibility_timeout='600', error_visibility_timeout='600', force_delete=False
         """
         self._queue_url = queueurl
-        self._lambdaarn = lambdaarn
+        self._function_name = function_name
         self._region_name = kwargs['region_name'] if 'region_name' in kwargs else 'us-east-1'
         self._poll_interval = kwargs["interval"] if 'interval' in kwargs else 60
         self._message_attribute_names = kwargs['message_attribute_names'] if 'message_attribute_names' in kwargs else []
         self._attribute_names = kwargs['attribute_names'] if 'attribute_names' in kwargs else []
         self._force_delete = kwargs['force_delete'] if 'force_delete' in kwargs else False
+
+        self._lambdaarn = self._get_lambdaarn()
         # must come last
         self._client = self._initialize_client()
 
 
     def _initialize_client(self):
         sqs = boto3.client('sqs', region_name=self._region_name)
+
+
         return sqs
 
     def _start_listening(self):
@@ -107,6 +111,16 @@ class SqsToLambdaListener(object):
 
         sh.setFormatter(formatter)
         logger.addHandler(sh)
+
+    def _get_lambdaarn(self):
+        lbd = boto3.client('lambda', region_name=self._region_name)
+        lbdf = lbd.get_function(FunctionName=self._function_name)
+        if 'Configuration' in lbdf and 'FunctionArn' in lbdf['Configuration']:
+            return lbdf['Configuration']['FunctionArn']
+        else:
+            raise Exception('Non-existent lambda {0}'.format(self._function_name))
+
+
 
     def handle_message(self, msgdeleter, body, attributes, messages_attributes):
         """
