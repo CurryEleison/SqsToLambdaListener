@@ -19,6 +19,8 @@ import logging
 import os
 import sys
 import io
+import signal
+import time
 
 # ================
 # start class
@@ -26,7 +28,34 @@ import io
 
 sqs_logger = logging.getLogger('sqs_listener')
 
+class GracefulKiller:
+    """
+    Allow for graceful kills via SIGINT and SIGTERM
+    Copy/pasted from 
+    https://stackoverflow.com/questions/18499497/how-to-process-sigterm-signal-gracefully
+    """
+    kill_now = False
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+    def exit_gracefully(self, signum, frame):
+        self.kill_now = True
+
+
+
 class SqsToLambdaListener(object):
+    """
+    Class to listen on an SQS Queue and send contents to an AWS Lambda
+    You need to set the region, queue url and lambda function name
+    force_delete doesn't work atm
+    you could set message attributes but I haven't really tried doing that
+    Code is based on / stolen from pySqsListener albeit much simplified
+    https://github.com/jegesh/python-sqs-listener
+    The queue handling here more or less assumes that you use dead letter
+    queues. If you don't you will just lose messages...
+
+    """
 
     def __init__(self, queueurl, function_name, **kwargs):
         """
@@ -36,7 +65,7 @@ class SqsToLambdaListener(object):
         self._queue_url = queueurl
         self._function_name = function_name
         self._region_name = kwargs['region_name'] if 'region_name' in kwargs else 'us-east-1'
-        self._poll_interval = kwargs["interval"] if 'interval' in kwargs else 60
+        self._poll_interval = kwargs["interval"] if 'interval' in kwargs else 1
         self._message_attribute_names = kwargs['message_attribute_names'] if 'message_attribute_names' in kwargs else []
         self._attribute_names = kwargs['attribute_names'] if 'attribute_names' in kwargs else []
         self._force_delete = kwargs['force_delete'] if 'force_delete' in kwargs else False
@@ -53,8 +82,11 @@ class SqsToLambdaListener(object):
         return sqs
 
     def _start_listening(self):
-        # TODO consider incorporating output processing from here: https://github.com/debrouwere/sqs-antenna/blob/master/antenna/__init__.py
+        killer = GracefulKiller()
         while True:
+            if killer.kill_now:
+                print "Ending on SIGTERM/SIGINT"
+                break
             messages = self._client.receive_message(
                 QueueUrl=self._queue_url,
                 MessageAttributeNames=self._message_attribute_names,
