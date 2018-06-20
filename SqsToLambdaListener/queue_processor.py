@@ -85,7 +85,7 @@ class SqsToLambdaListener(object):
         killer = GracefulKiller()
         while True:
             if killer.kill_now:
-                print "Ending on SIGTERM/SIGINT"
+                print("Ending on SIGTERM/SIGINT")
                 break
             messages = self._client.receive_message(
                 QueueUrl=self._queue_url,
